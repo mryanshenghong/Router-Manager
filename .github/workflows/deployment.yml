@@ -1,0 +1,29 @@
+name: Deployment
+
+on:
+  push:
+    branches: ['main']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: 'main'
+
+      - name: Deployment
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{secrets.OCI_HOST}}
+          username: ${{secrets.OCI_USER}}
+          key: ${{secrets.OCI_SECRET}}
+          script: |
+            cd /etc/nginx/html/MyWeb-NEXT
+            git reset --hard
+            rm -rf node_modules
+            git pull origin main
+            npm ci
+            npm run generate

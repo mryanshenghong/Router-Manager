@@ -54,7 +54,7 @@ export function useNetworkEnv() {
     }
   }
 
-  // 高性能探测当前设备公网出口 IP（双通道容灾，带超时）
+  // 高性能探测当前设备公网出口 IP（双通道容灾，带超时与防缓存时间戳）
   const fetchPublicIp = async (): Promise<string | null> => {
     if (typeof window === 'undefined' || !navigator.onLine) {
       currentPublicIp.value = ''
@@ -63,11 +63,12 @@ export function useNetworkEnv() {
 
     isFetchingIp.value = true
     try {
-      // 首选极速且支持 CORS 的 api64.ipify.org
+      const now = Date.now()
+      // 首选极速且保证纯 IPv4 的 api.ipify.org（带时间戳严格杜绝 Safari 缓存）
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), 2500)
       try {
-        const res = await fetch('https://api64.ipify.org?format=json', {
+        const res = await fetch(`https://api.ipify.org?format=json&_t=${now}`, {
           signal: controller.signal,
           cache: 'no-store',
         })
@@ -83,9 +84,26 @@ export function useNetworkEnv() {
         clearTimeout(timer)
       }
 
-      // 备选 ipwho.is (同时可获取 ISP 运营商组织信息辅助识别)
+      // 备选 1: api64.ipify.org (带时间戳)
       try {
-        const res = await fetch('https://ipwho.is/', {
+        const res = await fetch(`https://api64.ipify.org?format=json&_t=${now}`, {
+          signal: AbortSignal.timeout(2500),
+          cache: 'no-store',
+        })
+        if (res.ok) {
+          const data = await res.json()
+          if (data && data.ip) {
+            currentPublicIp.value = String(data.ip).trim()
+            return currentPublicIp.value
+          }
+        }
+      } catch {
+        // 忽略
+      }
+
+      // 备选 2: ipwho.is (同时可获取 ISP 运营商组织信息辅助识别)
+      try {
+        const res = await fetch(`https://ipwho.is/?_t=${now}`, {
           signal: AbortSignal.timeout(3000),
           cache: 'no-store',
         })
@@ -100,9 +118,11 @@ export function useNetworkEnv() {
           }
         }
       } catch {
-        // 忽略备选通道异常
+        // 忽略
       }
 
+      // 若所有通道均无法连通（说明处于网络切换断续或断网状态），清空当前出口 IP 避免残留旧家庭 IP
+      currentPublicIp.value = ''
       return null
     } finally {
       isFetchingIp.value = false
@@ -236,7 +256,16 @@ export function useNetworkEnv() {
       conn.addEventListener('change', handleConnChange)
     }
 
+    // 4 秒心跳探测：在页面处于前台可见时持续轮询公网出口 IP
+    // 确保任何网络切换（关闭 Wi-Fi 切 5G、开启/关闭 VPN 等）在 4 秒内必被捕获
+    const ipHeartbeatTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        updateNetworkStatus()
+      }
+    }, 4000)
+
     cleanupListeners = () => {
+      clearInterval(ipHeartbeatTimer)
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
       window.removeEventListener('focus', handleVisibility)

@@ -265,6 +265,10 @@ export function useRouterMonitor() {
     isCheckingAll.value = true
 
     try {
+      const { fetchPublicIp } = useNetworkEnv()
+      // 先行同步刷新当前最新公网出口 IP，保证节点判定时网络指纹绝对新鲜
+      await fetchPublicIp()
+
       const probeTasks = [
         checkNode(mainRouter.value),
         ...subRouters.value.map(sub => checkNode(sub)),

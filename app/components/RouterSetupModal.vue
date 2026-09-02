@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 import { useRouterMonitor } from '~/composables/useRouterMonitor'
 import { useNetworkEnv } from '~/composables/useNetworkEnv'
 
@@ -23,6 +23,7 @@ const {
 const {
   currentPublicIp,
   homePublicIp,
+  isFetchingIp,
   bindHomePublicIp,
   clearHomePublicIp,
   fetchPublicIp,
@@ -54,6 +55,8 @@ const checkingUpdate = ref(false)
 const updateStatusText = ref('')
 const isHardResetting = ref(false)
 
+let modalIpTimer: ReturnType<typeof setInterval> | null = null
+
 // 同步初始值
 watch(
   () => props.show,
@@ -73,10 +76,39 @@ watch(
       mainTestStatus.value = 'idle'
       mainTestLatency.value = null
       updateStatusText.value = ''
+
+      // 打开弹窗立即探测最新 IP 并启动 3 秒高频心跳
+      fetchPublicIp()
+      if (modalIpTimer) clearInterval(modalIpTimer)
+      modalIpTimer = setInterval(() => {
+        if (props.show) {
+          fetchPublicIp()
+        }
+      }, 3000)
+    } else {
+      if (modalIpTimer) {
+        clearInterval(modalIpTimer)
+        modalIpTimer = null
+      }
     }
   },
   { immediate: true }
 )
+
+onUnmounted(() => {
+  if (modalIpTimer) {
+    clearInterval(modalIpTimer)
+    modalIpTimer = null
+  }
+})
+
+const bindFeedbackMsg = ref('')
+const handleManualBindHomeIp = () => {
+  if (!currentPublicIp.value) return
+  bindHomePublicIp(currentPublicIp.value)
+  bindFeedbackMsg.value = `已成功绑定 ${currentPublicIp.value} 为家庭 Wi-Fi 网络！`
+  setTimeout(() => { bindFeedbackMsg.value = '' }, 3500)
+}
 
 // 检查 PWA 最新版本
 const checkForUpdates = async () => {
@@ -497,16 +529,29 @@ const handleSave = () => {
                 <span>家庭 Wi-Fi 出口公网 IP 指纹绑定</span>
               </label>
               <span
-                v-if="homePublicIp && currentPublicIp && homePublicIp === currentPublicIp"
+                v-if="isFetchingIp"
+                class="badge-base bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 text-xs flex items-center gap-1 font-medium"
+              >
+                <span class="i-carbon-circle-dash animate-spin text-[10px] text-brand-500" />
+                <span>实时探测中</span>
+              </span>
+              <span
+                v-else-if="homePublicIp && currentPublicIp && homePublicIp === currentPublicIp"
                 class="badge-base bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 text-xs"
               >
                 已连家庭 Wi-Fi
               </span>
               <span
                 v-else-if="homePublicIp && currentPublicIp && homePublicIp !== currentPublicIp"
-                class="badge-base bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950 dark:text-amber-400 text-xs"
+                class="badge-base bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950 dark:text-amber-400 text-xs font-semibold"
               >
                 处于蜂窝/外部网络
+              </span>
+              <span
+                v-else-if="homePublicIp && !currentPublicIp"
+                class="badge-base bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-950 dark:text-rose-400 text-xs"
+              >
+                公网未连接
               </span>
               <span
                 v-else
@@ -523,9 +568,20 @@ const handleSave = () => {
             <div class="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
               <div class="flex items-center justify-between">
                 <span class="text-slate-500 dark:text-slate-400">当前检测到的出口 IP:</span>
-                <span class="font-mono font-bold text-slate-800 dark:text-slate-200">
-                  {{ currentPublicIp || '探测中...' }}
-                </span>
+                <div class="flex items-center gap-1.5">
+                  <span class="font-mono font-bold text-slate-800 dark:text-slate-200">
+                    {{ isFetchingIp ? '探测中...' : (currentPublicIp || '未能获取') }}
+                  </span>
+                  <button
+                    type="button"
+                    class="btn-ghost p-1 text-slate-400 hover:text-brand-500 transition-colors"
+                    :disabled="isFetchingIp"
+                    title="立即重新检测当前出口 IP"
+                    @click="fetchPublicIp"
+                  >
+                    <span class="i-carbon-renew text-xs" :class="isFetchingIp ? 'animate-spin text-brand-500' : ''" />
+                  </button>
+                </div>
               </div>
               <div class="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
                 <span class="text-slate-500 dark:text-slate-400">已绑定的家庭网络 IP:</span>
@@ -535,12 +591,17 @@ const handleSave = () => {
               </div>
             </div>
 
+            <div v-if="bindFeedbackMsg" class="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1 px-1">
+              <span class="i-carbon-checkmark-filled text-sm" />
+              <span>{{ bindFeedbackMsg }}</span>
+            </div>
+
             <div class="flex items-center gap-2 pt-1">
               <button
                 type="button"
                 class="btn-secondary flex-1 py-2 text-xs flex-center gap-1.5"
-                :disabled="!currentPublicIp"
-                @click="bindHomePublicIp(currentPublicIp)"
+                :disabled="!currentPublicIp || isFetchingIp"
+                @click="handleManualBindHomeIp"
               >
                 <span class="i-carbon-link text-sm text-brand-500" />
                 <span>将当前网络设为家庭 Wi-Fi</span>

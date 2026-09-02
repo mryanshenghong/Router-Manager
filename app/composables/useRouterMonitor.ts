@@ -156,6 +156,13 @@ export function useRouterMonitor() {
 
   // 核心探针算法：带超时的局域网 HTTP 往返探测
   const probeLocalIp = async (ip: string, timeoutMs = 2500): Promise<{ ok: boolean; latency: number }> => {
+    const { isCellular, isWifiOrLan, homePublicIp, currentPublicIp } = useNetworkEnv()
+
+    // 1. 若当前明确处于移动蜂窝网络（5G/4G）或非家庭公网环境，私网 IP 绝不可达，坚决判定离线
+    if (isCellular.value) {
+      return { ok: false, latency: timeoutMs }
+    }
+
     const start = performance.now()
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -181,13 +188,21 @@ export function useRouterMonitor() {
         return { ok: false, latency: timeoutMs }
       }
 
-      // 平台适配：检查当前是否运行在 HTTPS 页面协议下（如云端部署的 PWA 在 iOS Safari 等移动端运行）
-      // 在 HTTPS 页面中，向 HTTP 私有 IP 发送请求会被浏览器的 Mixed Content 策略在客户端发包前直接拦截
+      // 平台适配：云端 HTTPS 部署下的 PWA 客户端沙箱环境
       const isHttpsPage = typeof window !== 'undefined' && window.location.protocol === 'https:'
       if (isHttpsPage) {
-        // 在 HTTPS 页面沙箱限制下，不应将浏览器的跨源阻断误判为家庭路由器故障，
-        // 标记为在线并赋予基准延迟，确保 iOS 用户在连接 Wi-Fi 时正常展示看板，并可正常点击跳转路由器后台
-        return { ok: true, latency: Math.max(8, latency) }
+        // 若已绑定家庭出口 IP 且当前出口 IP 完全匹配：确认为家庭 Wi-Fi 环境，赋予基准局域网延迟
+        if (homePublicIp.value && currentPublicIp.value && homePublicIp.value === currentPublicIp.value) {
+          return { ok: true, latency: Math.max(8, latency) }
+        }
+
+        // 若尚未绑定家庭 IP，但在推测的 Wi-Fi/局域网环境下
+        if (!homePublicIp.value && isWifiOrLan.value) {
+          return { ok: true, latency: Math.max(8, latency) }
+        }
+
+        // 其它情况（如出口 IP 不匹配或无法确定家庭网络）：安全起见判定为不可达
+        return { ok: false, latency: timeoutMs }
       }
 
       return { ok: false, latency: timeoutMs }
@@ -291,35 +306,50 @@ export function useRouterMonitor() {
 
   // 总体网络健康状态评估
   const networkHealth = computed(() => {
-    const { isCellular } = useNetworkEnv()
+    const { isCellular, currentPublicIp, homePublicIp } = useNetworkEnv()
     const isMainDown = mainRouter.value.status === 'offline'
     const isWanDown = internetStatus.value.status === 'offline'
     const offlineSubs = subRouters.value.filter(s => s.status === 'offline')
 
-    // 若系统明确处于蜂窝网络环境（如 Android API 探测到 cellular 或开启了蜂窝模拟）
+    // 1. 若处于移动蜂窝网络环境（如 5G/4G 或开启了蜂窝模拟）
     if (isCellular.value) {
+      const ipMismatch = homePublicIp.value && currentPublicIp.value && homePublicIp.value !== currentPublicIp.value
       return {
         level: 'warning',
-        title: '蜂窝数据模式',
-        desc: '当前处于移动蜂窝网络，无法访问本地私网网关。如需管理家庭路由器，请连接家庭 Wi-Fi。',
+        title: '5G 移动蜂窝数据模式',
+        desc: ipMismatch
+          ? `当前公网出口 IP（${currentPublicIp.value}）与绑定的家庭网络（${homePublicIp.value}）不一致。无法直连家庭私网设备，请连接家庭 Wi-Fi。`
+          : '当前处于移动蜂窝网络，无法访问 192.168.x.x 等本地私网网关。如需管理家庭路由器，请连接家庭 Wi-Fi。',
         badge: 'badge-brand',
       }
     }
 
-    if (isMainDown) {
+    // 2. 若主网关离线，但外网正常（典型为脱离家庭 Wi-Fi 进入外部网络）
+    if (isMainDown && !isWanDown) {
       return {
         level: 'critical',
-        title: '主网关无响应',
-        desc: `无法连通主路由器（${mainRouter.value.ip}），请检查 Wi-Fi 是否连接或路由器电源是否接通。`,
+        title: '无法连接主网关 (未连家庭 Wi-Fi)',
+        desc: `当前公网通畅，但无法连通主路由器（${mainRouter.value.ip}）。您可能处于移动数据或外部非家庭网络，请连接家庭 Wi-Fi。`,
         badge: 'badge-danger',
       }
     }
 
-    if (isWanDown) {
+    // 3. 若外网中断（宽带欠费/光猫断纤），但局域网主路由存活
+    if (isWanDown && !isMainDown) {
       return {
         level: 'warning',
         title: '外网连接中断',
         desc: '局域网主路由正常，但无法访问互联网。可能是光猫断纤、宽带欠费或运营商故障。',
+        badge: 'badge-danger',
+      }
+    }
+
+    // 4. 若主网关离线且外网断开（Wi-Fi 彻底关闭或总电源故障）
+    if (isMainDown && isWanDown) {
+      return {
+        level: 'critical',
+        title: '主网关失联且外网断开',
+        desc: `无法连通主路由器（${mainRouter.value.ip}）且无公网连接。请检查手机 Wi-Fi 开关或路由器电源是否接通。`,
         badge: 'badge-danger',
       }
     }

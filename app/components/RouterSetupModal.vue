@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useRouterMonitor } from '~/composables/useRouterMonitor'
+import { useNetworkEnv } from '~/composables/useNetworkEnv'
 
 const props = defineProps<{
   show: boolean
@@ -18,6 +19,14 @@ const {
   saveConfig,
   probeLocalIp,
 } = useRouterMonitor()
+
+const {
+  currentPublicIp,
+  homePublicIp,
+  bindHomePublicIp,
+  clearHomePublicIp,
+  fetchPublicIp,
+} = useNetworkEnv()
 
 // 常用网关 IP 快捷预设
 const ipPresets = [
@@ -200,6 +209,11 @@ const handleSave = () => {
   if (!formMainIp.value.trim()) {
     alert('请输入主路由器网关 IP 地址')
     return
+  }
+
+  // 初次配置或未绑定家庭公网 IP 时，自动将当前出口 IP 绑定为家庭网络 IP
+  if (!homePublicIp.value && currentPublicIp.value) {
+    bindHomePublicIp(currentPublicIp.value)
   }
 
   saveConfig({
@@ -465,13 +479,81 @@ const handleSave = () => {
                 <div class="flex items-center gap-2">
                   <h4 class="text-sm font-bold text-slate-900 dark:text-white">Router Manager</h4>
                   <span class="badge-base bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 text-xs font-mono font-semibold">
-                    v1.0.5
+                    v1.0.6
                   </span>
                 </div>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                   智能家庭路由器监控与网络状态面板 (PWA)
                 </p>
               </div>
+            </div>
+          </div>
+
+          <!-- 2. 家庭 Wi-Fi / 出口公网 IP 绑定 (防 5G 误报核心技术) -->
+          <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 space-y-3">
+            <div class="flex items-center justify-between">
+              <label class="text-xs sm:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <span class="i-carbon-network-3 text-brand-500 text-base" />
+                <span>家庭 Wi-Fi 出口公网 IP 指纹绑定</span>
+              </label>
+              <span
+                v-if="homePublicIp && currentPublicIp && homePublicIp === currentPublicIp"
+                class="badge-base bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 text-xs"
+              >
+                已连家庭 Wi-Fi
+              </span>
+              <span
+                v-else-if="homePublicIp && currentPublicIp && homePublicIp !== currentPublicIp"
+                class="badge-base bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950 dark:text-amber-400 text-xs"
+              >
+                处于蜂窝/外部网络
+              </span>
+              <span
+                v-else
+                class="badge-base bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 text-xs"
+              >
+                未绑定
+              </span>
+            </div>
+
+            <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              用于解决 iOS/macOS 移动端切换至 5G 移动蜂窝数据时无法识别的问题。将您的家庭宽带出口 IP 绑定为基准，一旦切至移动基站网络即可自动识别阻断。
+            </p>
+
+            <div class="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 space-y-2 text-xs">
+              <div class="flex items-center justify-between">
+                <span class="text-slate-500 dark:text-slate-400">当前检测到的出口 IP:</span>
+                <span class="font-mono font-bold text-slate-800 dark:text-slate-200">
+                  {{ currentPublicIp || '探测中...' }}
+                </span>
+              </div>
+              <div class="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
+                <span class="text-slate-500 dark:text-slate-400">已绑定的家庭网络 IP:</span>
+                <span class="font-mono font-bold text-brand-600 dark:text-brand-400">
+                  {{ homePublicIp || '未配置（建议在家庭 Wi-Fi 下点击绑定）' }}
+                </span>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                class="btn-secondary flex-1 py-2 text-xs flex-center gap-1.5"
+                :disabled="!currentPublicIp"
+                @click="bindHomePublicIp(currentPublicIp)"
+              >
+                <span class="i-carbon-link text-sm text-brand-500" />
+                <span>将当前网络设为家庭 Wi-Fi</span>
+              </button>
+
+              <button
+                v-if="homePublicIp"
+                type="button"
+                class="btn-ghost py-2 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                @click="clearHomePublicIp"
+              >
+                <span>解除绑定</span>
+              </button>
             </div>
           </div>
 

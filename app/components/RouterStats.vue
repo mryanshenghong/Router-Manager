@@ -308,7 +308,7 @@ const openRouterAdmin = (ip: string) => {
                   mainRouter.status === 'online' ? '在线' :
                   mainRouter.status === 'high-latency' ? '延迟偏高' :
                   mainRouter.status === 'checking' ? '正在探测...' :
-                  '离线 / 超时'
+                  isCellular ? '蜂窝不可达' : '离线 / 超时'
                 }}
               </span>
             </div>
@@ -400,7 +400,7 @@ const openRouterAdmin = (ip: string) => {
                   sub.status === 'online' ? '在线' :
                   sub.status === 'high-latency' ? '延迟偏高' :
                   sub.status === 'checking' ? '正在探测...' :
-                  '离线 / 超时'
+                  isCellular ? '蜂窝不可达' : '离线 / 超时'
                 }}
               </span>
             </div>
@@ -468,8 +468,11 @@ const openRouterAdmin = (ip: string) => {
         <span>故障自检与排障建议</span>
       </div>
       <div class="text-xs text-slate-600 dark:text-slate-300 space-y-1 pl-6">
-        <p v-if="mainRouter.status === 'offline' && internetStatus.status !== 'offline'">
-          • <strong>未连接家庭 Wi-Fi</strong>：当前公网正常，但无法连接局域网主路由（{{ mainRouter.ip }}）。若当前处于移动数据流量或外部网络，请连接家庭 Wi-Fi 后进行管理。
+        <p v-if="isCellular">
+          • <strong>处于移动蜂窝网络</strong>：当前设备使用 5G/4G 移动数据，无法访问 192.168.x.x 等家庭私网。请连接家庭 Wi-Fi 后进行管理。
+        </p>
+        <p v-else-if="mainRouter.status === 'offline' && internetStatus.status !== 'offline'">
+          • <strong>未连接家庭 Wi-Fi</strong>：当前公网正常，但无法连接局域网主路由（{{ mainRouter.ip }}）。若当前处于外部网络，请连接家庭 Wi-Fi 后进行管理。
         </p>
         <p v-else-if="mainRouter.status === 'offline'">
           • <strong>主网关无响应</strong>：无法连通主路由器，请确保手机/电脑已连接至该 Wi-Fi，且路由器电源接通正常。

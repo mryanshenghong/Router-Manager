@@ -22,21 +22,15 @@ export function useNetworkEnv() {
     return realConnectionType.value
   })
 
-  // 核心判断：是否为移动蜂窝数据网络或脱离家庭局域网模式
+  // 核心判断：是否为移动蜂窝数据网络
   const isCellular = computed(() => {
     if (simulatedMode.value === 'cellular') return true
     if (simulatedMode.value === 'wifi') return false
     if (simulatedMode.value === 'offline') return false
 
-    // 1. 若浏览器 NetworkInformation API 明确报告为蜂窝网络类型（Android Chrome 等）
+    // 若浏览器 NetworkInformation API 明确报告为蜂窝网络类型（Android Chrome 等）
     const type = realConnectionType.value.toLowerCase()
     if (type === 'cellular' || type === '2g' || type === '3g' || type === '4g' || type === '5g') {
-      return true
-    }
-
-    // 2. 跨平台智能识别：在外网在线（isOnline === true），但确认无法连通局域网主网关（isLanReachable === false）时，
-    // 在移动端代表已脱离家庭 Wi-Fi（如切换至蜂窝数据或连接外部非家庭网络）
-    if (realIsOnline.value && isLanReachable.value === false) {
       return true
     }
 

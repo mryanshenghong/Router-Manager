@@ -15,8 +15,10 @@ const copied = ref(false)
 onMounted(() => {
   if (typeof window !== 'undefined') {
     const ua = navigator.userAgent
-    const isIOS = /iPhone|iPad|iPod/i.test(ua)
-    const isMac = /Macintosh|Mac OS X/i.test(ua)
+    // iPadOS 13+ 默认启用“请求桌面网站”，UA 会伪装成 Macintosh，需结合触控点数 navigator.maxTouchPoints 判断
+    const isIPad = /iPad/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 0)
+    const isIOS = /iPhone|iPod/i.test(ua) || isIPad
+    const isMac = /Macintosh|Mac OS X/i.test(ua) && !isIPad
     const isSafari = /Safari/i.test(ua) && !/Chrome|CriOS|Edg/i.test(ua)
 
     if (isIOS) {
@@ -137,7 +139,7 @@ const copyUrl = async () => {
                 </div>
                 <ol class="text-xs text-slate-700 dark:text-slate-300 space-y-2 list-decimal list-inside leading-relaxed">
                   <li>
-                    点击 Safari 底部工具栏正中的 <strong class="text-brand-600 dark:text-brand-400">「分享」</strong> 按钮
+                    点击 Safari 工具栏的 <strong class="text-brand-600 dark:text-brand-400">「分享」</strong> 按钮（iPhone 在屏幕底部，iPad 在屏幕右上角）
                   </li>
                   <li>
                     在滑动菜单中选择 <strong class="text-brand-600 dark:text-brand-400">「添加到主屏幕」</strong>

@@ -15,13 +15,48 @@ onMounted(() => {
     isOnline.value = navigator.onLine
     window.addEventListener('online', updateOnlineStatus)
     window.addEventListener('offline', updateOnlineStatus)
+
+    // 主动检查 PWA Service Worker 是否有新版本
+    if ('serviceWorker' in navigator) {
+      // 1. 打开应用时立即主动检查一次
+      navigator.serviceWorker.getRegistration().then((reg) => {
+        if (reg) reg.update()
+      })
+
+      // 2. 当手机从后台切回前台时，主动触发更新检查
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible') {
+          navigator.serviceWorker.getRegistration().then((reg) => {
+            if (reg) reg.update()
+          })
+        }
+      }
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+
+      // 3. 应用在前台时，每隔 30 秒自动轮询一次版本更新
+      const updateInterval = setInterval(() => {
+        navigator.serviceWorker.getRegistration().then((reg) => {
+          if (reg) reg.update()
+        })
+      }, 30000)
+
+      cleanupListeners = () => {
+        document.removeEventListener('visibilitychange', handleVisibilityChange)
+        clearInterval(updateInterval)
+      }
+    }
   }
 })
+
+let cleanupListeners: (() => void) | null = null
 
 onUnmounted(() => {
   if (typeof window !== 'undefined') {
     window.removeEventListener('online', updateOnlineStatus)
     window.removeEventListener('offline', updateOnlineStatus)
+    if (cleanupListeners) {
+      cleanupListeners()
+    }
   }
 })
 

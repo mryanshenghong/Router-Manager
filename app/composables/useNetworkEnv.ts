@@ -54,79 +54,105 @@ export function useNetworkEnv() {
     }
   }
 
-  // 高性能探测当前设备公网出口 IP（双通道容灾，带超时与防缓存时间戳）
+  let ongoingFetchPromise: Promise<string | null> | null = null
+
+  // 高性能探测当前设备公网出口 IP（单例互斥锁 + 多域防复用 + 平滑防抖）
   const fetchPublicIp = async (): Promise<string | null> => {
-    if (typeof window === 'undefined' || !navigator.onLine) {
-      currentPublicIp.value = ''
-      return null
+    if (typeof window === 'undefined') return null
+
+    // 并发互斥锁：如果已有探测请求在进行，复用同一 Promise，彻底杜绝多定时器并发打架与状态抖动
+    if (ongoingFetchPromise) {
+      return ongoingFetchPromise
     }
 
-    isFetchingIp.value = true
-    try {
-      const now = Date.now()
-      // 首选极速且保证纯 IPv4 的 api.ipify.org（带时间戳严格杜绝 Safari 缓存）
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), 2500)
+    ongoingFetchPromise = (async () => {
+      isFetchingIp.value = true
       try {
-        const res = await fetch(`https://api.ipify.org?format=json&_t=${now}`, {
-          signal: controller.signal,
-          cache: 'no-store',
-        })
-        clearTimeout(timer)
-        if (res.ok) {
-          const data = await res.json()
-          if (data && data.ip) {
-            currentPublicIp.value = String(data.ip).trim()
-            return currentPublicIp.value
-          }
-        }
-      } catch {
-        clearTimeout(timer)
-      }
+        const now = Date.now()
 
-      // 备选 1: api64.ipify.org (带时间戳)
-      try {
-        const res = await fetch(`https://api64.ipify.org?format=json&_t=${now}`, {
-          signal: AbortSignal.timeout(2500),
-          cache: 'no-store',
-        })
-        if (res.ok) {
-          const data = await res.json()
-          if (data && data.ip) {
-            currentPublicIp.value = String(data.ip).trim()
-            return currentPublicIp.value
-          }
-        }
-      } catch {
-        // 忽略
-      }
-
-      // 备选 2: ipwho.is (同时可获取 ISP 运营商组织信息辅助识别)
-      try {
-        const res = await fetch(`https://ipwho.is/?_t=${now}`, {
-          signal: AbortSignal.timeout(3000),
-          cache: 'no-store',
-        })
-        if (res.ok) {
-          const data = await res.json()
-          if (data && data.ip) {
-            currentPublicIp.value = String(data.ip).trim()
-            if (data.connection && data.connection.isp) {
-              currentIsp.value = String(data.connection.isp)
+        // 通道 1: api.ip.sb (Cloudflare 全球边缘加速，跨域名阻断旧 HTTP/2 连接在 5G 上的复用)
+        try {
+          const res = await fetch(`https://api.ip.sb/jsonip?_t=${now}`, {
+            signal: AbortSignal.timeout(2000),
+            cache: 'no-store',
+          })
+          if (res.ok) {
+            const data = await res.json()
+            if (data && data.ip) {
+              currentPublicIp.value = String(data.ip).trim()
+              return currentPublicIp.value
             }
-            return currentPublicIp.value
           }
+        } catch {
+          // 备选
         }
-      } catch {
-        // 忽略
-      }
 
-      // 若所有通道均无法连通（说明处于网络切换断续或断网状态），清空当前出口 IP 避免残留旧家庭 IP
-      currentPublicIp.value = ''
-      return null
-    } finally {
-      isFetchingIp.value = false
-    }
+        // 通道 2: api.ipify.org (纯 IPv4 规范)
+        try {
+          const res = await fetch(`https://api.ipify.org?format=json&_t=${now}`, {
+            signal: AbortSignal.timeout(2000),
+            cache: 'no-store',
+          })
+          if (res.ok) {
+            const data = await res.json()
+            if (data && data.ip) {
+              currentPublicIp.value = String(data.ip).trim()
+              return currentPublicIp.value
+            }
+          }
+        } catch {
+          // 备选
+        }
+
+        // 通道 3: api64.ipify.org
+        try {
+          const res = await fetch(`https://api64.ipify.org?format=json&_t=${now}`, {
+            signal: AbortSignal.timeout(2500),
+            cache: 'no-store',
+          })
+          if (res.ok) {
+            const data = await res.json()
+            if (data && data.ip) {
+              currentPublicIp.value = String(data.ip).trim()
+              return currentPublicIp.value
+            }
+          }
+        } catch {
+          // 忽略
+        }
+
+        // 通道 4: ipwho.is (同时捕获运营商信息)
+        try {
+          const res = await fetch(`https://ipwho.is/?_t=${now}`, {
+            signal: AbortSignal.timeout(3000),
+            cache: 'no-store',
+          })
+          if (res.ok) {
+            const data = await res.json()
+            if (data && data.ip) {
+              currentPublicIp.value = String(data.ip).trim()
+              if (data.connection && data.connection.isp) {
+                currentIsp.value = String(data.connection.isp)
+              }
+              return currentPublicIp.value
+            }
+          }
+        } catch {
+          // 忽略
+        }
+
+        // 仅在明确离线时才置空，切换过程中的瞬态抖动保留上次判定，杜绝空值跳跃
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          currentPublicIp.value = ''
+        }
+        return currentPublicIp.value || null
+      } finally {
+        isFetchingIp.value = false
+        ongoingFetchPromise = null
+      }
+    })()
+
+    return ongoingFetchPromise
   }
 
   const isOnline = computed(() => {

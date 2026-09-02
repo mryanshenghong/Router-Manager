@@ -55,8 +55,6 @@ const checkingUpdate = ref(false)
 const updateStatusText = ref('')
 const isHardResetting = ref(false)
 
-let modalIpTimer: ReturnType<typeof setInterval> | null = null
-
 // 同步初始值
 watch(
   () => props.show,
@@ -77,30 +75,12 @@ watch(
       mainTestLatency.value = null
       updateStatusText.value = ''
 
-      // 打开弹窗立即探测最新 IP 并启动 3 秒高频心跳
+      // 打开弹窗立即探测最新 IP
       fetchPublicIp()
-      if (modalIpTimer) clearInterval(modalIpTimer)
-      modalIpTimer = setInterval(() => {
-        if (props.show) {
-          fetchPublicIp()
-        }
-      }, 3000)
-    } else {
-      if (modalIpTimer) {
-        clearInterval(modalIpTimer)
-        modalIpTimer = null
-      }
     }
   },
   { immediate: true }
 )
-
-onUnmounted(() => {
-  if (modalIpTimer) {
-    clearInterval(modalIpTimer)
-    modalIpTimer = null
-  }
-})
 
 const bindFeedbackMsg = ref('')
 const handleManualBindHomeIp = () => {
@@ -511,7 +491,7 @@ const handleSave = () => {
                 <div class="flex items-center gap-2">
                   <h4 class="text-sm font-bold text-slate-900 dark:text-white">Router Manager</h4>
                   <span class="badge-base bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 text-xs font-mono font-semibold">
-                    v1.0.6
+                    v1.0.7
                   </span>
                 </div>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -529,15 +509,8 @@ const handleSave = () => {
                 <span>家庭 Wi-Fi 出口公网 IP 指纹绑定</span>
               </label>
               <span
-                v-if="isFetchingIp"
-                class="badge-base bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 text-xs flex items-center gap-1 font-medium"
-              >
-                <span class="i-carbon-circle-dash animate-spin text-[10px] text-brand-500" />
-                <span>实时探测中</span>
-              </span>
-              <span
-                v-else-if="homePublicIp && currentPublicIp && homePublicIp === currentPublicIp"
-                class="badge-base bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 text-xs"
+                v-if="homePublicIp && currentPublicIp && homePublicIp === currentPublicIp"
+                class="badge-base bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 text-xs font-semibold"
               >
                 已连家庭 Wi-Fi
               </span>
@@ -570,7 +543,7 @@ const handleSave = () => {
                 <span class="text-slate-500 dark:text-slate-400">当前检测到的出口 IP:</span>
                 <div class="flex items-center gap-1.5">
                   <span class="font-mono font-bold text-slate-800 dark:text-slate-200">
-                    {{ isFetchingIp ? '探测中...' : (currentPublicIp || '未能获取') }}
+                    {{ currentPublicIp || (isFetchingIp ? '探测中...' : '未能获取') }}
                   </span>
                   <button
                     type="button"

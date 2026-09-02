@@ -21,7 +21,7 @@ jobs:
           username: ${{secrets.OCI_USER}}
           key: ${{secrets.OCI_SECRET}}
           script: |
-            cd /etc/nginx/html/MyWeb-NEXT
+            cd /etc/nginx/html/Router-Manager
             git reset --hard
             rm -rf node_modules
             git pull origin main

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useNetworkEnv } from '~/composables/useNetworkEnv'
+import { useRouterMonitor } from '~/composables/useRouterMonitor'
 
 const {
   isCellular,
@@ -11,10 +12,19 @@ const {
   refreshStatus,
 } = useNetworkEnv()
 
-const isDismissedForPreview = ref(false)
+const { checkAllNodes } = useRouterMonitor()
 
-const handleRefresh = () => {
-  refreshStatus()
+const isDismissedForPreview = ref(false)
+const isRefreshing = ref(false)
+
+const handleRefresh = async () => {
+  isRefreshing.value = true
+  try {
+    refreshStatus()
+    await checkAllNodes()
+  } finally {
+    isRefreshing.value = false
+  }
   isDismissedForPreview.value = false
 }
 </script>
@@ -68,11 +78,15 @@ const handleRefresh = () => {
         <!-- 按钮组 -->
         <div class="flex flex-col sm:flex-row gap-3 pt-2">
           <button
-            class="btn-primary flex-1 py-3 text-sm shadow-md shadow-brand-500/20"
+            class="btn-primary flex-1 py-3 text-sm shadow-md shadow-brand-500/20 flex-center"
+            :disabled="isRefreshing"
             @click="handleRefresh"
           >
-            <span class="i-carbon-renew mr-1.5 text-base" />
-            重新检测网络
+            <span
+              class="i-carbon-renew mr-1.5 text-base"
+              :class="isRefreshing ? 'animate-spin' : ''"
+            />
+            <span>{{ isRefreshing ? '正在重新探测网络...' : '重新检测网络' }}</span>
           </button>
 
           <button

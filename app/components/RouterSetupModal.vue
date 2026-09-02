@@ -465,7 +465,7 @@ const handleSave = () => {
                 <div class="flex items-center gap-2">
                   <h4 class="text-sm font-bold text-slate-900 dark:text-white">Router Manager</h4>
                   <span class="badge-base bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 text-xs font-mono font-semibold">
-                    v1.0.3
+                    v1.0.4
                   </span>
                 </div>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">

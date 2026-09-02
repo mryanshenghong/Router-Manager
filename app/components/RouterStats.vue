@@ -89,7 +89,7 @@ const openRouterAdmin = (ip: string) => {
                 {{ networkHealth.title }}
               </h2>
               <span :class="networkHealth.badge">
-                {{ networkHealth.level === 'good' ? '网络通畅' : '需注意' }}
+                {{ networkHealth.level === 'good' ? '网络通畅' : (networkHealth.level === 'critical' ? '连接异常' : '需注意') }}
               </span>
               <span v-if="isCellular" class="badge-base bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950 dark:text-amber-300">
                 蜂窝数据模式
@@ -468,8 +468,11 @@ const openRouterAdmin = (ip: string) => {
         <span>故障自检与排障建议</span>
       </div>
       <div class="text-xs text-slate-600 dark:text-slate-300 space-y-1 pl-6">
-        <p v-if="mainRouter.status === 'offline'">
-          • <strong>主网关无响应</strong>：请确保手机/电脑已连接至该 Wi-Fi，且主路由 IP（{{ mainRouter.ip }}）设置正确无误。
+        <p v-if="mainRouter.status === 'offline' && internetStatus.status !== 'offline'">
+          • <strong>未连接家庭 Wi-Fi</strong>：当前公网正常，但无法连接局域网主路由（{{ mainRouter.ip }}）。若当前处于移动数据流量或外部网络，请连接家庭 Wi-Fi 后进行管理。
+        </p>
+        <p v-else-if="mainRouter.status === 'offline'">
+          • <strong>主网关无响应</strong>：无法连通主路由器，请确保手机/电脑已连接至该 Wi-Fi，且路由器电源接通正常。
         </p>
         <p v-if="internetStatus.status === 'offline'">
           • <strong>外网中断</strong>：局域网连接正常，但公网不可达。请检查光猫 PON 灯是否常亮，或拨打宽带运营商排查故障。

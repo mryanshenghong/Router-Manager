@@ -1,4 +1,5 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useNetworkEnv } from '~/composables/useNetworkEnv'
 
 export type NodeHealthStatus = 'online' | 'high-latency' | 'offline' | 'checking'
 
@@ -57,6 +58,8 @@ const isCheckingAll = ref(false)
 const lastCheckedTime = ref<number | null>(null)
 
 export function useRouterMonitor() {
+  const { setLanReachable } = useNetworkEnv()
+
   // 加载本地配置
   const loadConfig = () => {
     if (typeof window === 'undefined') return
@@ -148,6 +151,7 @@ export function useRouterMonitor() {
       failCount: 0,
     }
     subRouters.value = []
+    setLanReachable(null)
   }
 
   // 核心探针算法：带超时的局域网 HTTP 往返探测
@@ -157,10 +161,10 @@ export function useRouterMonitor() {
     const timer = setTimeout(() => controller.abort(), timeoutMs)
 
     try {
-      // 通过 mode: 'no-cors' 发起 HEAD/GET 请求探测局域网 IP
-      // 若设备在局域网存活，TCP 握手即刻完成，fetch 迅速返回 opaque response
+      // 通过 mode: 'no-cors' 发起 GET 请求探测局域网 IP
+      // 若设备在局域网存活并提供 Web 服务，TCP 握手完成并返回 HTTP 响应，fetch 顺利 resolve 为 opaque response
       await fetch(`http://${ip}/?_probe=${Date.now()}`, {
-        method: 'HEAD',
+        method: 'GET',
         mode: 'no-cors',
         cache: 'no-store',
         signal: controller.signal,
@@ -168,21 +172,10 @@ export function useRouterMonitor() {
       clearTimeout(timer)
       const latency = Math.max(1, Math.round(performance.now() - start))
       return { ok: true, latency }
-    } catch (e: any) {
+    } catch {
       clearTimeout(timer)
-      const latency = Math.round(performance.now() - start)
-
-      // 超时或中止，判定设备离线
-      if (e.name === 'AbortError' || latency >= timeoutMs - 50) {
-        return { ok: false, latency: timeoutMs }
-      }
-
-      // 如果未超时却报错（例如端口关闭但收到 TCP RST 包），在内网通常在 50ms 内快速返回，证明该 IP 主机在局域网在线
-      if (latency < 200) {
-        return { ok: true, latency }
-      }
-
-      return { ok: false, latency }
+      // 无论超时还是蜂窝网络下秒报网络不可达，均判定为不可达（杜绝秒报错被误判为在线的重大缺陷）
+      return { ok: false, latency: timeoutMs }
     }
   }
 
@@ -261,6 +254,13 @@ export function useRouterMonitor() {
 
       await Promise.allSettled(probeTasks)
       lastCheckedTime.value = Date.now()
+
+      // 同步局域网主网关连通性状态到全局网络环境
+      if (mainRouter.value.status === 'online' || mainRouter.value.status === 'high-latency') {
+        setLanReachable(true)
+      } else if (mainRouter.value.status === 'offline') {
+        setLanReachable(false)
+      }
     } finally {
       isCheckingAll.value = false
     }
@@ -281,6 +281,16 @@ export function useRouterMonitor() {
     const offlineSubs = subRouters.value.filter(s => s.status === 'offline')
 
     if (isMainDown) {
+      // 若外网通畅但主网关离线，属于脱离家庭 Wi-Fi（如切换至蜂窝数据或连接外部非家庭网络）
+      if (!isWanDown) {
+        return {
+          level: 'critical',
+          title: '已脱离家庭 Wi-Fi',
+          desc: `当前外网通畅，但无法连接局域网主网关（${mainRouter.value.ip}）。您可能已切至移动蜂窝数据或处于外部网络。`,
+          badge: 'badge-danger',
+        }
+      }
+
       return {
         level: 'critical',
         title: '主网关失联',
@@ -343,16 +353,48 @@ export function useRouterMonitor() {
     }
   }
 
+  let cleanupListeners: (() => void) | null = null
+
   onMounted(() => {
     loadConfig()
     if (isInitialized.value) {
       checkAllNodes()
     }
     startPolling()
+
+    if (typeof window !== 'undefined') {
+      const handleVisibility = () => {
+        if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+          if (isInitialized.value) {
+            checkAllNodes()
+          }
+        }
+      }
+
+      const handleOnline = () => {
+        if (isInitialized.value) {
+          checkAllNodes()
+        }
+      }
+
+      window.addEventListener('visibilitychange', handleVisibility)
+      window.addEventListener('focus', handleVisibility)
+      window.addEventListener('online', handleOnline)
+
+      cleanupListeners = () => {
+        window.removeEventListener('visibilitychange', handleVisibility)
+        window.removeEventListener('focus', handleVisibility)
+        window.removeEventListener('online', handleOnline)
+      }
+    }
   })
 
   onUnmounted(() => {
     stopPolling()
+    if (cleanupListeners) {
+      cleanupListeners()
+      cleanupListeners = null
+    }
   })
 
   return {

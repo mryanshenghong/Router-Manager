@@ -43,7 +43,7 @@ const emit = defineEmits<{
               {{ isStandalone ? '桌面端 (PWA)' : '网页端' }}
             </span>
             <span class="badge-base bg-emerald-50 text-emerald-600 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 text-[10px] font-mono">
-              v1.0.3
+              v1.0.4
             </span>
           </div>
         </div>

@@ -48,7 +48,7 @@ export default defineNuxtConfig({
   },
 
   pwa: {
-    registerType: 'autoUpdate',
+    registerType: 'prompt',
     manifest: {
       name: 'Router Manager 路由器管理平台',
       short_name: 'Router',
